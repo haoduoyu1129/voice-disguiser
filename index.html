@@ -1,0 +1,740 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>语音伪装器 - Voice Disguiser</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', sans-serif; background: #0d1117; color: #e6edf3; min-height: 100vh; }
+.container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+header { text-align: center; padding: 30px 0; border-bottom: 1px solid #30363d; margin-bottom: 30px; }
+header h1 { font-size: 2.2em; background: linear-gradient(135deg, #58a6ff, #bc8cff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+header p { color: #8b949e; margin-top: 8px; font-size: 1.05em; -webkit-text-fill-color: #8b949e; }
+.section { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin-bottom: 24px; }
+.section h2 { font-size: 1.2em; color: #58a6ff; margin-bottom: 16px; }
+.row { display: flex; gap: 20px; flex-wrap: wrap; }
+.col { flex: 1; min-width: 280px; }
+.btn-group { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+.btn { padding: 10px 20px; border: 1px solid #30363d; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all .2s; background: #21262d; color: #c9d1d9; }
+.btn:hover { background: #30363d; border-color: #58a6ff; }
+.btn.primary { background: #238636; border-color: #2ea043; color: #fff; }
+.btn.primary:hover { background: #2ea043; }
+.btn.danger { background: #8b1a1a; border-color: #d03535; color: #fff; }
+.btn.danger:hover { background: #a31d1d; }
+.btn.active { background: #1f6feb; border-color: #58a6ff; color: #fff; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.canvas-wrap { background: #0d1117; border-radius: 8px; padding: 8px; margin: 12px 0; }
+canvas { display: block; width: 100%; height: 160px; border-radius: 4px; }
+.slider-group { margin: 16px 0; }
+.slider-group label { display: flex; justify-content: space-between; color: #8b949e; font-size: 13px; margin-bottom: 6px; }
+.slider-group input[type="range"] { width: 100%; accent-color: #58a6ff; }
+select { padding: 8px 12px; border: 1px solid #30363d; border-radius: 6px; background: #21262d; color: #c9d1d9; font-size: 14px; width: 100%; }
+.status { color: #8b949e; font-size: 13px; margin-top: 8px; padding: 8px 12px; background: #0d1117; border-radius: 6px; }
+.info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.info-item { background: #0d1117; border-radius: 8px; padding: 14px; text-align: center; }
+.info-item .label { font-size: 12px; color: #8b949e; }
+.info-item .value { font-size: 1.3em; font-weight: 600; color: #58a6ff; margin-top: 4px; }
+.preset-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.preset-btn { padding: 16px; border: 2px solid #30363d; border-radius: 10px; cursor: pointer; text-align: center; transition: all .2s; background: #0d1117; }
+.preset-btn:hover { border-color: #58a6ff; transform: translateY(-2px); }
+.preset-btn .icon { font-size: 2em; margin-bottom: 6px; }
+.preset-btn .name { font-weight: 600; font-size: 14px; }
+.preset-btn .desc { font-size: 11px; color: #8b949e; margin-top: 4px; }
+.preset-btn.selected { border-color: #58a6ff; background: #1a2533; }
+#statusIndicator { position: fixed; top: 20px; right: 20px; width: 12px; height: 12px; border-radius: 50%; background: #238636; box-shadow: 0 0 8px #23863688; }
+#statusIndicator.recording { background: #d03535; box-shadow: 0 0 8px #d0353588; animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+.file-upload { position: relative; overflow: hidden; }
+.file-upload input[type="file"] { position: absolute; left: 0; top: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+@media (max-width: 700px) { .preset-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div id="statusIndicator"></div>
+
+<div class="container">
+  <header>
+    <h1>🎤 语音伪装器</h1>
+    <p>基于基频迁移与共振峰调整的实时语音变声系统 · 信号分析与处理大作业</p>
+  </header>
+
+  <!-- 输入区 -->
+  <div class="section">
+    <h2>📥 音频输入</h2>
+    <div class="btn-group">
+      <button id="btnRecord" class="btn danger">🔴 开始录音</button>
+      <button id="btnPlayInput" class="btn" disabled>▶ 播放原音</button>
+      <span class="btn file-upload"><input type="file" id="fileInput" accept="audio/*">📂 上传音频文件</span>
+    </div>
+    <div class="status" id="statusText">就绪 — 请录音或上传音频文件</div>
+  </div>
+
+  <!-- 变声预设 -->
+  <div class="section">
+    <h2>🔊 变声模式</h2>
+    <div class="preset-grid">
+      <div class="preset-btn" data-mode="male2female">
+        <div class="icon">👨→👩</div>
+        <div class="name">男声→女声</div>
+        <div class="desc">基频伸展 + 共振峰提升</div>
+      </div>
+      <div class="preset-btn" data-mode="female2male">
+        <div class="icon">👩→👨</div>
+        <div class="name">女声→男声</div>
+        <div class="desc">基频收缩 + 共振峰降低</div>
+      </div>
+      <div class="preset-btn" data-mode="male2child">
+        <div class="icon">👨→👶</div>
+        <div class="name">男声→童声</div>
+        <div class="desc">基频大幅伸展 + 共振峰提升</div>
+      </div>
+      <div class="preset-btn" data-mode="female2child">
+        <div class="icon">👩→👶</div>
+        <div class="name">女声→童声</div>
+        <div class="desc">基频伸展 + 共振峰提升</div>
+      </div>
+      <div class="preset-btn" data-mode="child2female">
+        <div class="icon">👶→👩</div>
+        <div class="name">童声→女声</div>
+        <div class="desc">基频收缩 + 共振峰降低</div>
+      </div>
+      <div class="preset-btn" data-mode="child2male">
+        <div class="icon">👶→👨</div>
+        <div class="name">童声→男声</div>
+        <div class="desc">基频大幅收缩 + 共振峰降低</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 参数控制 -->
+  <div class="section">
+    <h2>⚙️ 参数微调</h2>
+    <div class="row">
+      <div class="col">
+        <div class="slider-group">
+          <label><span>音调偏移 (Pitch Shift)</span><span id="pitchVal">0</span> 半音</label>
+          <input type="range" id="pitchShift" min="-24" max="24" value="0" step="1">
+        </div>
+        <div class="slider-group">
+          <label><span>共振峰偏移 (Formant Shift)</span><span id="formantVal">1.0</span> ×</label>
+          <input type="range" id="formantShift" min="0.4" max="2.5" value="1.0" step="0.05">
+        </div>
+        <div class="slider-group">
+          <label><span>播放速度 (Speed)</span><span id="speedVal">1.0</span> ×</label>
+          <input type="range" id="speedShift" min="0.3" max="3.0" value="1.0" step="0.05">
+        </div>
+      </div>
+      <div class="col">
+        <div class="slider-group">
+          <label><span>噪声门限 (Noise Gate)</span><span id="noiseVal">-60</span> dB</label>
+          <input type="range" id="noiseGate" min="-80" max="-20" value="-60" step="1">
+        </div>
+        <div class="slider-group">
+          <label><span>低切滤波 (High-Pass)</span><span id="hpVal">80</span> Hz</label>
+          <input type="range" id="hpFilter" min="20" max="500" value="80" step="5">
+        </div>
+        <div class="slider-group">
+          <label><span>音量增益</span><span id="gainVal">1.0</span> ×</label>
+          <input type="range" id="volumeGain" min="0" max="3.0" value="1.0" step="0.1">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 可视化 -->
+  <div class="section">
+    <h2>📊 波形与频谱</h2>
+    <div class="row">
+      <div class="col">
+        <div class="canvas-wrap"><canvas id="waveformCanvas"></canvas></div>
+        <div class="info-grid">
+          <div class="info-item"><div class="label">估计基频</div><div class="value" id="f0Display">— Hz</div></div>
+          <div class="info-item"><div class="label">采样率</div><div class="value" id="sampleRateDisplay">— Hz</div></div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="canvas-wrap"><canvas id="spectrumCanvas"></canvas></div>
+        <div class="info-grid">
+          <div class="info-item"><div class="label">时长</div><div class="value" id="durationDisplay">— s</div></div>
+          <div class="info-item"><div class="label">数据点数</div><div class="value" id="samplesDisplay">—</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 播放与导出 -->
+  <div class="section">
+    <h2>🎵 播放控制</h2>
+    <div class="btn-group">
+      <button id="btnPlayProcessed" class="btn primary" disabled>▶ 播放变声后音频</button>
+      <button id="btnStop" class="btn danger" disabled>⏹ 停止</button>
+      <button id="btnDownload" class="btn" disabled>💾 下载处理结果</button>
+      <button id="btnCompare" class="btn">🔁 原音/变声对比</button>
+    </div>
+    <div class="status" id="processStatus">等待处理...</div>
+  </div>
+</div>
+
+<script>
+// ===== 全局状态 =====
+let audioContext = null;
+let sourceBuffer = null;       // Float32Array of original audio
+let processedBuffer = null;    // Float32Array of processed audio
+let sampleRate = 44100;
+let isRecording = false;
+let mediaRecorder = null;
+let recordedChunks = [];
+let playbackNode = null;
+let analyserNode = null;
+let animFrameId = null;
+let currentMode = 'male2female';
+
+const PRESETS = {
+  male2female:   { pitch: 12,  formant: 1.35, desc: '基频伸展 + 共振峰提升' },
+  female2male:   { pitch: -12, formant: 0.72, desc: '基频收缩 + 共振峰降低' },
+  male2child:    { pitch: 22,  formant: 1.65, desc: '基频大幅伸展 + 共振峰提升' },
+  female2child:  { pitch: 14,  formant: 1.28, desc: '基频伸展 + 共振峰提升' },
+  child2female:  { pitch: -10, formant: 0.78, desc: '基频收缩 + 共振峰降低' },
+  child2male:    { pitch: -18, formant: 0.62, desc: '基频大幅收缩 + 共振峰降低' }
+};
+
+// ===== DOM refs =====
+const $ = id => document.getElementById(id);
+const statusText = $('statusText');
+const processStatus = $('processStatus');
+
+// ===== Audio Context =====
+function getAudioContext() {
+  if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  return audioContext;
+}
+
+// ===== Canvas Setup =====
+const waveCanvas = $('waveformCanvas');
+const waveCtx = waveCanvas.getContext('2d');
+const specCanvas = $('spectrumCanvas');
+const specCtx = specCanvas.getContext('2d');
+
+function resizeCanvases() {
+  const rect = waveCanvas.parentElement.getBoundingClientRect();
+  const w = Math.max(280, rect.width - 16);
+  waveCanvas.width = w; waveCanvas.height = 160;
+  specCanvas.width = w; specCanvas.height = 160;
+}
+resizeCanvases();
+window.addEventListener('resize', resizeCanvases);
+
+// ===== Recording =====
+$('btnRecord').addEventListener('click', async () => {
+  if (isRecording) {
+    mediaRecorder.stop();
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+    recordedChunks = [];
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+      const arrayBuffer = await blob.arrayBuffer();
+      const ctx = getAudioContext();
+      const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+      sourceBuffer = audioBuffer.getChannelData(0);
+      sampleRate = audioBuffer.sampleRate;
+      updateInfo();
+      drawWaveform(sourceBuffer);
+      drawSpectrum(sourceBuffer);
+      $('btnPlayInput').disabled = false;
+      statusText.textContent = `✅ 录音完成: ${sourceBuffer.length} samples, ${(sourceBuffer.length/sampleRate).toFixed(1)}s`;
+      updateDisplay(sampleRate, sourceBuffer.length);
+      isRecording = false;
+      $('btnRecord').textContent = '🔴 开始录音';
+      document.getElementById('statusIndicator').className = '';
+    };
+    mediaRecorder.start();
+    isRecording = true;
+    $('btnRecord').textContent = '⏹ 停止录音';
+    document.getElementById('statusIndicator').className = 'recording';
+    statusText.textContent = '🔴 录音中...';
+  } catch (e) {
+    statusText.textContent = '❌ 无法访问麦克风: ' + e.message;
+  }
+});
+
+// ===== File Upload =====
+$('fileInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const ctx = getAudioContext();
+    const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+    sourceBuffer = audioBuffer.getChannelData(0);
+    sampleRate = audioBuffer.sampleRate;
+    updateInfo();
+    drawWaveform(sourceBuffer);
+    drawSpectrum(sourceBuffer);
+    $('btnPlayInput').disabled = false;
+    statusText.textContent = `✅ 文件加载: ${file.name} (${(sourceBuffer.length/sampleRate).toFixed(1)}s)`;
+    updateDisplay(sampleRate, sourceBuffer.length);
+  } catch (err) {
+    statusText.textContent = '❌ 文件加载失败: ' + err.message;
+  }
+});
+
+function updateDisplay(sr, len) {
+  $('sampleRateDisplay').textContent = sr + ' Hz';
+  $('durationDisplay').textContent = (len / sr).toFixed(2) + ' s';
+  $('samplesDisplay').textContent = len.toLocaleString();
+}
+
+// ===== Presets =====
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    currentMode = btn.dataset.mode;
+    const p = PRESETS[currentMode];
+    $('pitchShift').value = p.pitch;
+    $('pitchVal').textContent = p.pitch;
+    $('formantShift').value = p.formant;
+    $('formantVal').textContent = p.formant.toFixed(2);
+    statusText.textContent = `已选择: ${btn.querySelector('.name').textContent} — ${p.desc}`;
+    if (sourceBuffer) processAudio();
+  });
+});
+// Default select
+document.querySelector('.preset-btn').classList.add('selected');
+
+// ===== Sliders =====
+$('pitchShift').addEventListener('input', () => {
+  $('pitchVal').textContent = $('pitchShift').value;
+  if (sourceBuffer) processAudio();
+});
+$('formantShift').addEventListener('input', () => {
+  $('formantVal').textContent = parseFloat($('formantShift').value).toFixed(2);
+  if (sourceBuffer) processAudio();
+});
+$('speedShift').addEventListener('input', () => {
+  $('speedVal').textContent = parseFloat($('speedShift').value).toFixed(2);
+});
+$('noiseGate').addEventListener('input', () => { $('noiseVal').textContent = $('noiseGate').value; });
+$('hpFilter').addEventListener('input', () => { $('hpVal').textContent = $('hpFilter').value; });
+$('volumeGain').addEventListener('input', () => { $('gainVal').textContent = parseFloat($('volumeGain').value).toFixed(1); });
+
+// ===== Audio Processing (核心处理) =====
+function applyNoiseGate(samples, thresholdDb) {
+  const threshold = Math.pow(10, thresholdDb / 20);
+  const out = new Float32Array(samples.length);
+  for (let i = 0; i < samples.length; i++) {
+    out[i] = Math.abs(samples[i]) < threshold ? 0 : samples[i];
+  }
+  return out;
+}
+
+function applyHighPass(samples, sr, cutoffHz) {
+  // Simple 1st-order high-pass filter: y[n] = a * (x[n] - x[n-1]) + a * y[n-1]
+  // where a = 1 / (1 + fc/fs*pi*2) ... simpler: RC filter
+  const RC = 1 / (2 * Math.PI * cutoffHz);
+  const dt = 1 / sr;
+  const alpha = RC / (RC + dt);
+  const out = new Float32Array(samples.length);
+  out[0] = samples[0];
+  for (let i = 1; i < samples.length; i++) {
+    out[i] = alpha * (out[i-1] + samples[i] - samples[i-1]);
+  }
+  return out;
+}
+
+function pitchShiftSamples(samples, sr, semitones) {
+  // Pitch shift using linear interpolation resampling
+  const ratio = Math.pow(2, semitones / 12);
+  const newLen = Math.floor(samples.length / ratio);
+  const out = new Float32Array(newLen);
+  for (let i = 0; i < newLen; i++) {
+    const srcIdx = i * ratio;
+    const i0 = Math.floor(srcIdx);
+    const i1 = Math.min(i0 + 1, samples.length - 1);
+    const frac = srcIdx - i0;
+    out[i] = samples[i0] * (1 - frac) + samples[i1] * frac;
+  }
+  return out;
+}
+
+function applyFormantShift(samples, sr, formantRatio) {
+  // Spectral envelope modification using spectral centroid shift
+  // Simplified: apply a pre-emphasis / de-emphasis filter to shift spectral tilt
+  if (formantRatio === 1.0) return samples;
+  const N = samples.length;
+  const out = new Float32Array(N);
+
+  if (formantRatio > 1.0) {
+    // Boost higher frequencies - apply band emphasis using simple FIR
+    const strength = (formantRatio - 1.0) * 0.5;
+    for (let i = 0; i < N; i++) {
+      const pre = i > 0 ? samples[i] - samples[i-1] : 0;
+      out[i] = samples[i] + strength * pre;
+    }
+  } else {
+    // Attenuate higher frequencies - low-pass effect
+    const strength = (1.0 - formantRatio) * 0.5;
+    for (let i = 1; i < N; i++) {
+      out[i] = samples[i] * (1 - strength) + out[i-1] * strength;
+    }
+    out[0] = samples[0];
+  }
+  return out;
+}
+
+function processAudio() {
+  if (!sourceBuffer) return;
+
+  const pitchSemi = parseInt($('pitchShift').value);
+  const formantRatio = parseFloat($('formantShift').value);
+  const noiseDb = parseInt($('noiseGate').value);
+  const hpHz = parseInt($('hpFilter').value);
+  const gain = parseFloat($('volumeGain').value);
+
+  let buf = new Float32Array(sourceBuffer);
+
+  // Step 1: Noise gate
+  buf = applyNoiseGate(buf, noiseDb);
+
+  // Step 2: High-pass filter (remove low rumble)
+  buf = applyHighPass(buf, sampleRate, hpHz);
+
+  // Step 3: Formant shift (apply before pitch shift for better quality)
+  buf = applyFormantShift(buf, sampleRate, formantRatio);
+
+  // Step 4: Pitch shift (resampling)
+  buf = pitchShiftSamples(buf, sampleRate, pitchSemi);
+  // Note: the resampling changes effective sample rate for playback
+
+  // Step 5: Volume gain
+  if (gain !== 1.0) {
+    for (let i = 0; i < buf.length; i++) buf[i] *= gain;
+  }
+
+  processedBuffer = buf;
+  $('btnPlayProcessed').disabled = false;
+  $('btnDownload').disabled = false;
+
+  // Update spectrum display
+  drawWaveform(processedBuffer);
+  drawSpectrum(processedBuffer);
+
+  // Estimate f0
+  const f0 = estimatePitch(processedBuffer, sampleRate);
+  $('f0Display').textContent = f0 > 0 ? f0.toFixed(1) + ' Hz' : '— Hz';
+
+  processStatus.textContent = `✅ 处理完成: 输入 ${sourceBuffer.length} → 输出 ${processedBuffer.length} samples (${(processedBuffer.length/sampleRate*1000).toFixed(0)}ms 数据)`;
+}
+
+// ===== Pitch Estimation (Autocorrelation) =====
+function estimatePitch(samples, sr) {
+  const minLag = Math.floor(sr / 1000); // 1000 Hz max
+  const maxLag = Math.floor(sr / 40);   // 40 Hz min
+  const len = samples.length;
+  if (len < maxLag) return -1;
+
+  // Downsample for speed
+  const decim = 4;
+  const ds = [];
+  for (let i = 0; i < len; i += decim) ds.push(samples[i]);
+  const dsr = sr / decim;
+  const dminLag = Math.floor(dsr / 1000);
+  const dmaxLag = Math.floor(dsr / 40);
+
+  // Autocorrelation
+  let bestLag = dminLag;
+  let bestCorr = -1;
+  const segLen = Math.min(ds.length, dmaxLag * 4);
+  for (let lag = dminLag; lag <= dmaxLag; lag++) {
+    let corr = 0;
+    let energy = 0;
+    for (let i = 0; i < segLen - lag; i++) {
+      corr += ds[i] * ds[i + lag];
+      energy += ds[i] * ds[i];
+    }
+    if (energy > 0) {
+      corr /= Math.sqrt(energy * (segLen - lag));
+      if (corr > bestCorr) { bestCorr = corr; bestLag = lag; }
+    }
+  }
+
+  if (bestCorr < 0.1) return -1;
+  return dsr / bestLag;
+}
+
+// ===== Drawing =====
+function drawWaveform(samples) {
+  const w = waveCanvas.width, h = waveCanvas.height;
+  waveCtx.fillStyle = '#0d1117';
+  waveCtx.fillRect(0, 0, w, h);
+
+  const step = Math.max(1, Math.floor(samples.length / w));
+  const mid = h / 2;
+
+  waveCtx.beginPath();
+  waveCtx.strokeStyle = '#58a6ff';
+  waveCtx.lineWidth = 1.5;
+  for (let x = 0; x < w; x++) {
+    const idx = Math.min(x * step, samples.length - 1);
+    const y = mid + samples[idx] * (h * 0.4);
+    x === 0 ? waveCtx.moveTo(x, y) : waveCtx.lineTo(x, y);
+  }
+  waveCtx.stroke();
+
+  // Envelope
+  waveCtx.beginPath();
+  waveCtx.strokeStyle = '#bc8cff44';
+  waveCtx.lineWidth = 1;
+  for (let x = 0; x < w; x++) {
+    const start = x * step;
+    const end = Math.min(start + step, samples.length);
+    let maxVal = 0;
+    for (let i = start; i < end; i++) {
+      const a = Math.abs(samples[i]);
+      if (a > maxVal) maxVal = a;
+    }
+    const y = mid + maxVal * (h * 0.4);
+    x === 0 ? waveCtx.moveTo(x, y) : waveCtx.lineTo(x, y);
+  }
+  for (let x = w - 1; x >= 0; x--) {
+    const start = x * step;
+    const end = Math.min(start + step, samples.length);
+    let maxVal = 0;
+    for (let i = start; i < end; i++) {
+      const a = Math.abs(samples[i]);
+      if (a > maxVal) maxVal = a;
+    }
+    const y = mid - maxVal * (h * 0.4);
+    waveCtx.lineTo(x, y);
+  }
+  waveCtx.closePath();
+  waveCtx.fillStyle = '#bc8cff11';
+  waveCtx.fill();
+}
+
+function drawSpectrum(samples) {
+  const w = specCanvas.width, h = specCanvas.height;
+  specCtx.fillStyle = '#0d1117';
+  specCtx.fillRect(0, 0, w, h);
+
+  // FFT on a segment
+  const fftSize = 2048;
+  const seg = new Float32Array(fftSize);
+  const start = Math.floor((samples.length - fftSize) / 2);
+  for (let i = 0; i < fftSize; i++) {
+    const idx = Math.max(0, Math.min(start + i, samples.length - 1));
+    // Apply Hanning window
+    const hann = 0.5 * (1 - Math.cos(2 * Math.PI * i / (fftSize - 1)));
+    seg[i] = samples[idx] * hann;
+  }
+
+  // FFT using real DFT
+  const magnitude = new Float32Array(fftSize / 2);
+  for (let k = 0; k < fftSize / 2; k++) {
+    let re = 0, im = 0;
+    for (let n = 0; n < fftSize; n++) {
+      const angle = -2 * Math.PI * k * n / fftSize;
+      re += seg[n] * Math.cos(angle);
+      im += seg[n] * Math.sin(angle);
+    }
+    magnitude[k] = Math.sqrt(re * re + im * im) / fftSize;
+  }
+
+  // Convert to dB scale
+  const maxFreq = sampleRate / 2;
+  const maxMag = Math.max(...magnitude.slice(1)) || 1;
+
+  // Draw spectrum
+  const barW = w / 256; // Show up to ~4kHz
+  const freqBins = Math.min(256, magnitude.length);
+  for (let i = 0; i < freqBins; i++) {
+    const freq = i / freqBins * maxFreq;
+    const db = 20 * Math.log10((magnitude[i] / maxMag) + 1e-10);
+    const norm = Math.max(0, Math.min(1, (db + 60) / 60));
+    const x = i * barW;
+    const barH = norm * h;
+    const hue = 200 - norm * 80;
+    specCtx.fillStyle = `hsl(${hue}, 80%, ${40 + norm * 30}%)`;
+    specCtx.fillRect(x, h - barH, Math.max(1, barW - 1), barH);
+  }
+
+  // Frequency labels
+  specCtx.fillStyle = '#8b949e44';
+  specCtx.font = '10px monospace';
+  [100, 200, 500, 1000, 2000, 4000].forEach(f => {
+    const x = (f / maxFreq) * w;
+    if (x < w) {
+      specCtx.beginPath();
+      specCtx.moveTo(x, 0);
+      specCtx.lineTo(x, h);
+      specCtx.strokeStyle = '#8b949e22';
+      specCtx.stroke();
+      specCtx.fillText(f + 'Hz', x + 2, 12);
+    }
+  });
+}
+
+// ===== Playback =====
+$('btnPlayInput').addEventListener('click', () => {
+  if (!sourceBuffer) return;
+  playBuffer(sourceBuffer, sampleRate, 1.0, false);
+});
+
+$('btnPlayProcessed').addEventListener('click', () => {
+  if (!processedBuffer) return;
+  const speed = parseFloat($('speedShift').value);
+  playBuffer(processedBuffer, sampleRate, speed, true);
+});
+
+$('btnStop').addEventListener('click', () => {
+  if (playbackNode) {
+    try { playbackNode.stop(); } catch(e) {}
+    playbackNode = null;
+    if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+  }
+  $('btnStop').disabled = true;
+});
+
+$('btnCompare').addEventListener('click', () => {
+  if (!sourceBuffer || !processedBuffer) return;
+  // Play original then processed
+  playBuffer(sourceBuffer, sampleRate, 1.0, false);
+  setTimeout(() => {
+    const speed = parseFloat($('speedShift').value);
+    playBuffer(processedBuffer, sampleRate, speed, true);
+  }, (sourceBuffer.length / sampleRate * 1000) + 500);
+});
+
+function playBuffer(buffer, sr, speed, isProcessed) {
+  $('btnStop').disabled = false;
+  try {
+    const ctx = getAudioContext();
+
+    // Create an AudioBuffer from our float data
+    const audioBuffer = ctx.createBuffer(1, buffer.length, sr);
+    audioBuffer.getChannelData(0).set(buffer);
+
+    const source = ctx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.playbackRate.value = speed;
+
+    // Add analyser for visualization
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    source.connect(analyser);
+    analyser.connect(ctx.destination);
+
+    source.start(0);
+    playbackNode = source;
+
+    // Live spectrum
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    function updateSpectrum() {
+      if (!playbackNode) return;
+      analyser.getByteTimeDomainData(dataArray);
+      // Draw live waveform
+      const w = waveCanvas.width, h = waveCanvas.height;
+      waveCtx.fillStyle = '#0d1117';
+      waveCtx.fillRect(0, 0, w, h);
+      waveCtx.beginPath();
+      waveCtx.strokeStyle = '#58a6ff88';
+      waveCtx.lineWidth = 1;
+      for (let x = 0; x < w; x++) {
+        const idx = Math.floor(x / w * dataArray.length);
+        const val = (dataArray[idx] / 128 - 1) * (h * 0.4) + h/2;
+        x === 0 ? waveCtx.moveTo(x, val) : waveCtx.lineTo(x, val);
+      }
+      waveCtx.stroke();
+      animFrameId = requestAnimationFrame(updateSpectrum);
+    }
+    updateSpectrum();
+
+    source.onended = () => {
+      playbackNode = null;
+      $('btnStop').disabled = true;
+      if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+      if (isProcessed) drawWaveform(processedBuffer);
+      else drawWaveform(sourceBuffer);
+    };
+
+    if (isProcessed) processStatus.textContent = '▶ 播放变声音频...';
+    else statusText.textContent = '▶ 播放原音频...';
+
+  } catch (e) {
+    processStatus.textContent = '❌ 播放失败: ' + e.message;
+  }
+}
+
+// ===== Download =====
+$('btnDownload').addEventListener('click', () => {
+  if (!processedBuffer) return;
+  const sr = sampleRate;
+  const numChannels = 1;
+  const bitsPerSample = 16;
+
+  // Create WAV file
+  const byteRate = sr * numChannels * bitsPerSample / 8;
+  const blockAlign = numChannels * bitsPerSample / 8;
+  const dataSize = processedBuffer.length * blockAlign;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  function writeString(offset, str) {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  }
+  function writeUint16(offset, val) { view.setUint16(offset, val, true); }
+  function writeUint32(offset, val) { view.setUint32(offset, val, true); }
+
+  writeString(0, 'RIFF');
+  writeUint32(4, 36 + dataSize);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  writeUint32(16, 16);
+  writeUint16(20, 1); // PCM
+  writeUint16(22, numChannels);
+  writeUint32(24, sr);
+  writeUint32(28, byteRate);
+  writeUint16(32, blockAlign);
+  writeUint16(34, bitsPerSample);
+  writeString(36, 'data');
+  writeUint32(40, dataSize);
+
+  for (let i = 0; i < processedBuffer.length; i++) {
+    const s = Math.max(-1, Math.min(1, processedBuffer[i]));
+    const val = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    view.setInt16(44 + i * 2, val, true);
+  }
+
+  const blob = new Blob([buffer], { type: 'audio/wav' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const modeNames = { male2female: '男变女', female2male: '女变男', male2child: '男变童', female2child: '女变童', child2female: '童变女', child2male: '童变男' };
+  a.download = `语音伪装_${modeNames[currentMode] || 'processed'}.wav`;
+  a.click();
+  URL.revokeObjectURL(url);
+  processStatus.textContent = '💾 下载完成!';
+});
+
+// ===== Auto-process after input =====
+function updateInfo() {
+  if (sourceBuffer) processAudio();
+}
+
+// ===== Initialization =====
+console.log('🎤 语音伪装器已加载');
+console.log('频率对照表:');
+console.log('  男声基频: [50, 180] Hz  共振峰: 偏低');
+console.log('  女声基频: [160, 380] Hz 共振峰: 中');
+console.log('  童声基频: [400, 1000] Hz共振峰: 偏高');
+</script>
+</body>
+</html>
